@@ -24,10 +24,14 @@ class State():
     SIX = 6
     SEVEN = 7
     EIGHT = 8
+    
+class Mine_Exception(Exception):
+    def __init__(self, message, field, col, row):
+        super().__init__(message)
         
-
-
-
+        self.field = field
+        self.col = col
+        self.row = row
 
 class MinesweeperEnv(gym.Env):
 
@@ -38,16 +42,14 @@ class MinesweeperEnv(gym.Env):
         if (seed == None):
             seed = self._generate_seed()
         self.seed = seed
-        rng = self._get_rng()
+        
 
         # Set Grid data
         self.COLS = self._rand_col_num(size) + 2
         self.ROWS = self._rand_row_num(size) + 2
         field_num = self.COLS*self.ROWS
         self.FIELD_NUM = field_num
-        self.FIELDS = range(0, field_num)
-        self.grid = np.zeros(shape=())
-    
+        self.FIELDS = range(0, field_num)    
 
         # Set Meta Spaces
         self.observation_space = Dict({
@@ -69,8 +71,11 @@ class MinesweeperEnv(gym.Env):
         })
         self.action_space = MultiDiscrete([len(Action.actions), self.COLS, self.ROWS])
 
+        
 
+    def _generate_map(self):
         # init map
+        self.grid = np.zeros(shape=(self.COLS*self.ROWS,))
         self.FORBIDDEN_FIELDS:np.ndarray = self.get_forbidden_fields(self.COLS, self.ROWS)
         self.ALLOWED_FIELDS:np.ndarray = self.get_allowed_fields(self.COLS, self.ROWS)
 
@@ -79,8 +84,14 @@ class MinesweeperEnv(gym.Env):
 
 
         # Distribute mines
+        rng = self._get_rng()
         mine_num = len(self.ALLOWED_FIELDS) * self.get_mine_ratio()
         self.MINE_FIELDS = rng.choice(self.ALLOWED_FIELDS, mine_num)
+        
+        # calc number map
+        self.bomb_counts = {}
+        for one_field in self.FIELDS:
+            self.bomb_counts[one_field] = self.get_bomb_count_of_field(one_field)
 
 
 
@@ -129,39 +140,78 @@ class MinesweeperEnv(gym.Env):
         if (field in self.ALLOWED_FIELDS):
             return (
                 field + 1,
-                field + self.COLS +1,
+                field + self.COLS + 1,
                 field + self.COLS,
-                field + self.COLS -1,
-                field -1,
-                field - self.COLS -1,
+                field + self.COLS - 1,
+                field - 1,
+                field - self.COLS - 1,
                 field - self.COLS,
                 field - self.COLS + 1
             )
         else:
             return None
+        
+    def get_bomb_count_of_field(self, field: int) -> np.uint8:
+        bomb_count: np.uint8 = 0
+        
+        # check if field is forbidden
+        if field in self.FORBIDDEN_FIELDS:
+            return -1
+        
+        # get list of neighboring fields
+        neigbors = self.get_neighbor_fields(field)
+        
+        # count bombs on neiboring fields
+        for one_field in neigbors:
+            if one_field in self.MINE_FIELDS:
+                bomb_count += 1
+        
+        # return bombs
+        return bomb_count
+    
+    def get_coords_of_field(self, field: int):
+        return (field % self.COLS, int(field/self.COLS))
 
     def reveal(self, field:int):
-        # TODO: set grid
-        return 
+        # add list to fields to the - to be revealed queue
+
+        # check if field is a mine
+        if field in self.MINE_FIELDS:
+            col, row = self.get_coords_of_field(field)
+            raise Mine_Exception("Stepped on Mine", field, col, row)
+        
+        to_be_revealed = []
+        to_be_revealed.append(field)
+        
+        while len(to_be_revealed) > 0:
+            field = to_be_revealed.pop(0)
+
+            # check if field can be revealed
+            if self.grid[field] == State.UNKNOWN:
+                bomb_count = self.bomb_counts[field]
+
+                # reveal bomb count
+                self.grid[field] = bomb_count
+
+                # reveal neigbors if bomb count == 0 
+                if bomb_count == 0:
+                    to_be_revealed.append(self.get_neighbor_fields(field))
+
 
     
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
+        
+        # generate new seed if no seed is passed
         if seed is None:
             self.seed = self._generate_seed()
         else:
             self.seed = seed
-        rng = self._get_rng()
 
-        # set forbidden and allowed fields
+        # create a new map
+        self._generate_map()
 
-        self.grid[self.FORBIDDEN_FIELDS] = State.FORBIDDEN
-        self.grid[self.ALLOWED_FIELDS] = State.UNKNOWN
-
-        # Distribute mines
-        mine_num = len(self.ALLOWED_FIELDS) * self.get_mine_ratio()
-        self.MINE_FIELDS = rng.choice(self.ALLOWED_FIELDS, mine_num)
-
+        # return mandatory data
         return self._get_ops(), self._get_info()
 
 
