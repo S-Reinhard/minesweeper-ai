@@ -216,15 +216,15 @@ class MinesweeperEnv(gym.Env):
 
 
     def step(self, action):
-        # TODO
+        # TODO step function
         return super().step(action)
 
     def render(self):
-        # TODO
+        # TODO render function
         return super().render()
 
     def close(self):
-        # TODO
+        # TODO close env
         return super().close()
     
     def _get_ops(self):
@@ -247,7 +247,7 @@ class MinesweeperEnv(gym.Env):
         }
     
     def _get_info(self):
-        # TODO
+        # TODO gathering info about the game which cannot be observed
         return
     
          
