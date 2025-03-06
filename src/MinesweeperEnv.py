@@ -2,41 +2,39 @@ import gymnasium as gym
 import numpy as np
 from numpy import arange as range
 from gymnasium.spaces import MultiDiscrete, Dict, Box, Discrete
-from enum import IntEnum
+from enum import IntEnum, Enum, auto
 from typing import Optional
+from MinesweeperStates import Field_State as State
 
-class Action():
+class Action(IntEnum):
     REVEAL = 0
     FLAG = 1
     UNFLAG = 2
-    actions = [REVEAL, FLAG, UNFLAG]
-
-class State():
-    FORBIDDEN = -3
-    FLAGGED = -2
-    UNKNOWN = -1
-    EMPTY = 0
-    ONE = 1
-    TWO = 2
-    THREE = 3
-    FOUR = 4
-    FIVE = 5
-    SIX = 6
-    SEVEN = 7
-    EIGHT = 8
     
-class Mine_Exception(Exception):
-    def __init__(self, message, field, col, row):
-        super().__init__(message)
-        
+    
+class ResCode(Enum):
+    STEPPED_ON_MINE = auto()
+    TRIED_TO_REVEAL_FLAG = auto()
+    REVEAL_SUCCESSFUL = auto()
+    TRIED_TO_REVEAL_KNOWN = auto()
+    TRIED_TO_REVEAL_FORBIDDEN = auto()
+    TRIED_TO_FLAG_FORBIDDEN_FIELD = auto()
+    TRIED_TO_UNFLAG_FORBIDDEN_FIELD = auto()
+    
+    
+class Reaveal_Found_Unexpected_Mine(Exception):
+    def __init__(self, message, field, state, grid, mine_fields, *args):
+        super.__init__(message)
         self.field = field
-        self.col = col
-        self.row = row
+        self.state = state
+        self.grid = grid
+        self.mine_fields = mine_fields
+
+
 
 class MinesweeperEnv(gym.Env):
 
     def __init__(self, size=(9,9), mine_ratio=0.15625, seed=None):
-        super().__init__()
 
         # init random
         if (seed == None):
@@ -66,12 +64,12 @@ class MinesweeperEnv(gym.Env):
             "SIX": Box(low=0, high=1, shape=(field_num,), dtype=np.int8),
             "SEVEN": Box(low=0, high=1, shape=(field_num,), dtype=np.int8),
             "EIGHT": Box(low=0, high=1, shape=(field_num,), dtype=np.int8),
-            "GRID": Box(low=-3, high=8, shape=(field_num,), dtype=np.int8),
+            "GRID": Box(low=0, high=8, shape=(field_num,), dtype=np.int8),
             "Revealed_Percent": Box(low=0.0, high=100.0, shape=(1,), dtype=np.float256),
         })
-        self.action_space = MultiDiscrete([len(Action.actions), self.COLS, self.ROWS])
-
+        self.action_space = MultiDiscrete([len(Action), len(self.FIELDS)])
         
+        self._generate_map()
 
     def _generate_map(self):
         # init map
@@ -128,11 +126,11 @@ class MinesweeperEnv(gym.Env):
             mine_ratio = rng.uniform(low=0.12345679012345678, high=0.20625)
         return mine_ratio
 
-    def _rand_row_num(self, size):
+    def _rand_row_num(self, size: tuple[int, int]):
         rng = self._get_rng()
         return size[1] if (size[1] is not None and size[0] > 0) else rng.integers(low=8, high=16, endpoint=True)
 
-    def _rand_col_num(self, size):
+    def _rand_col_num(self, size: tuple[int, int]):
         rng = self._get_rng()
         return size[0] if (size[0] is not None and size[0] > 0) else rng.integers(low=8, high=30, endpoint=True)
 
@@ -171,31 +169,85 @@ class MinesweeperEnv(gym.Env):
     
     def get_coords_of_field(self, field: int):
         return (field % self.COLS, int(field/self.COLS))
+    
+    def has_mine(self, field: int) -> bool:
+        return (field in self.MINE_FIELDS)
+    
+    def has_flag(self, field: int) -> bool:
+        return (self.grid[field] == State.FLAGGED)
+    
+    def is_known(self, field: int) -> bool:
+        # Define which states indicate that the fields value is already known
+        known_states = [
+            State.EMPTY, 
+            State.ONE, 
+            State.TWO, 
+            State.THREE,
+            State.FOUR ,
+            State.FIVE,
+            State.SIX,
+            State.SEVEN,
+            State.EIGHT
+        ]
 
-    def reveal(self, field:int):
-        # add list to fields to the - to be revealed queue
+        return (self.grid[field] in known_states)
+    
+    def is_forbidden(self, field: int) -> bool:
+        return (self.grid[field] == State.FORBIDDEN)
+    
 
-        # check if field is a mine
-        if field in self.MINE_FIELDS:
-            col, row = self.get_coords_of_field(field)
-            raise Mine_Exception("Stepped on Mine", field, col, row)
+    def reveal(self, field:int) -> ResCode:
         
-        to_be_revealed = []
-        to_be_revealed.append(field)
+        # react to mine
+        if (self.has_mine(field)):
+            return ResCode.STEPPED_ON_MINE
         
-        while len(to_be_revealed) > 0:
-            field = to_be_revealed.pop(0)
+        # check if field can be revealed
+        if (self.grid[field] == State.UNKNOWN):
+            to_be_revealed = []
+            to_be_revealed.append(field)
 
-            # check if field can be revealed
-            if self.grid[field] == State.UNKNOWN:
-                bomb_count = self.bomb_counts[field]
+            while len(to_be_revealed) > 0:
+                field = to_be_revealed.pop(0)
 
-                # reveal bomb count
-                self.grid[field] = bomb_count
+                # check if field can be revealed
+                if self.grid[field] == State.UNKNOWN and field not in self.MINE_FIELDS:
+                    bomb_count = self.bomb_counts[field]
 
-                # reveal neigbors if bomb count == 0 
-                if bomb_count == 0:
-                    to_be_revealed.append(self.get_neighbor_fields(field))
+                    # reveal bomb count
+                    self.grid[field] = bomb_count
+
+                    # reveal neigbors if bomb count == 0 
+                    if bomb_count == 0:
+                        to_be_revealed.append(self.get_neighbor_fields(field))
+
+            return ResCode.REVEAL_SUCCESSFUL
+        elif (self.is_known(field)):
+            return ResCode.TRIED_TO_REVEAL_KNOWN
+        elif (self.is_forbidden(field)):
+            return ResCode.TRIED_TO_REVEAL_FORBIDDEN
+        else:
+            raise Exception("Unexpectet revealing action on field " + field)
+
+            
+
+    def place_flag(self, field:int) -> bool:
+        if(self.grid[field] == State.UNKNOWN):
+            # change state of field to flagged
+            self.grid[field] = State.FLAGGED
+            return True
+        else:
+            # If flag action cannot be performed on this field return False 
+            return False
+        
+    def remove_flag(self, field:int) -> ResCode:
+        if(self.grid[field] == State.FLAGGED):
+            # change state of field to unknown
+            self.grid[field] = State.UNKNOWN
+            return True
+        else:
+            # If flag action cannot be performed on this field return False 
+            return False
 
 
     
@@ -216,8 +268,29 @@ class MinesweeperEnv(gym.Env):
 
 
     def step(self, action):
-        # TODO step function
-        return super().step(action)
+        # init data
+        ACTION_TYPE, FIELD = action
+        reward = 0
+        terminated = False
+        truncated = False
+        
+        # punish actions on forbidden fields
+        if (self.is_forbidden(FIELD)):
+            reward = Rewards.ACTION_ON_FORBIDDEN.value
+
+        # dict of action code to it's function
+        actions = {
+            Action.REVEAL : self.reveal,
+            Action.FLAG : self.place_flag,
+            Action.UNFLAG : self.remove_flag
+        }
+
+        # call function from dict
+        RES_CODE: ResCode = actions[ACTION_TYPE](FIELD)
+        
+        reward
+
+        return self._get_ops(), reward, terminated, truncated, self._get_info()
 
     def render(self):
         # TODO render function
@@ -247,7 +320,7 @@ class MinesweeperEnv(gym.Env):
         }
     
     def _get_info(self):
-        # TODO gathering info about the game which cannot be observed
+        # TODO gathering info about the game which should not be observed or to evaluate the actions
         return
     
          
