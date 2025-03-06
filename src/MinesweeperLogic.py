@@ -1,28 +1,15 @@
+from __future__ import annotations
 import numpy as np
-from numpy import uint8, uint16, int32, double, ndarray, NDA
+from numpy import uint8, uint16, int32, ndarray
 from numpy.random import SeedSequence, BitGenerator, Generator
 from numpy.typing import NDArray
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from collections import deque
 from enum import IntEnum, Enum, auto
-from CellStates import CELL_STATE, KNOWN_STATES, UNKNWON_STATES, NUMBERED_STATES
+from src.CellStates import CELL_STATE, KNOWN_STATES, NUMBERED_STATES
+from src.GameSettings import Grid_Size, Mine_Density
 import secrets
-from __future__ import annotations
-
-class Grid_Size(Enum):
-    BEGINNER = (9, 9)
-    INTERMEDIATE = (16, 16)
-    EXPERT = (30, 16)
-    CUSTOM_LIMIT = (30, 24)
-    RANKED_LIMIT = (50, 50)
-
-class Mine_Density:
-    BEGINNER = double(0.123)
-    INTERMEDIATE = double(0.156)
-    EXPERT = double(0.206)
-    UPPER_LIMIT = double(668 / 720)
-    
 
 class Res_Code(Enum):
     Successful = auto()
@@ -52,7 +39,7 @@ class AutoRevealedMine(Exception):
         super().__init__(self.message)
 
 @dataclass(frozen=True)
-class MinesweeperGame:
+class MinesweeperLogic:
     """
     A class for initializing and managing a Minesweeper game board.
 
@@ -123,7 +110,7 @@ class MinesweeperGame:
     def __post_init__(self):
         # if no seed was given generate one
         if (self.SEED is None):
-            self.SEED = secrets.randbits(64)
+            object.__setattr__(self, 'SEED', secrets.randbits(64))
             
         # Validate if MAP_BOUNDARIES are big enough to cover the perimeters of the generated levels
         self._check_map_generation_boundaries()
@@ -145,8 +132,10 @@ class MinesweeperGame:
             # select random mine ration
             mine_ratio = self.RNG.uniform(Mine_Density.BEGINNER, Mine_Density.EXPERT)
             mine_num = uint16(self.SIZE * mine_ratio)
-            self.MINE_FIELDS = self.RNG.choice(self.ALLOWED_CELLS, mine_num, replace=False)
+            mine_fields = self.RNG.choice(self.ALLOWED_CELLS, mine_num, replace=False)
+            object.__setattr__(self, 'MINE_FIELDS', mine_fields)
             self.MINE_FIELDS.setflags(write=False)
+            
         else:
             # Validate the Type of the mine array
             self._check_mine_fields_dtype()
@@ -158,7 +147,8 @@ class MinesweeperGame:
         # if grid is none -> calculate grid; else validate 
         if (self.GRID is None):
              # init grid as forbidden 
-             self.GRID: ndarray[CELL_STATE] = np.full(self.TRUE_SIZE, CELL_STATE.FORBIDDEN, dtype=CELL_STATE)
+             grid: ndarray[CELL_STATE] = np.full(self.TRUE_SIZE, CELL_STATE.FORBIDDEN, dtype=CELL_STATE)
+             object.__setattr__(self, 'GRID', grid)
              
              # set allowed cells to coverd
              self.GRID[self.ALLOWED_CELLS] = CELL_STATE.COVERED
@@ -300,7 +290,8 @@ class MinesweeperGame:
         
     @property
     def ALLOWED_CELLS(self) -> NDArray[uint16]:
-        allowed_fields: ndarray = self.CELLS[self._isAllowed(self.CELLS)]
+        allowed_mask = self._isAllowed(self.CELLS)
+        allowed_fields: ndarray = self.CELLS[allowed_mask]
         allowed_fields.setflags(write=False)
         return allowed_fields
     
@@ -367,10 +358,10 @@ class MinesweeperGame:
         row_of_cell = cell // self.MAP_BOUNDARIES_COLS  
         col_of_cell = cell % self.MAP_BOUNDARIES_COLS
 
-        return 0 < col_of_cell <= self.COLS and 0 < row_of_cell <= self.ROWS
+        return (0 < col_of_cell) & (col_of_cell <= self.COLS) & (0 < row_of_cell) & (row_of_cell <= self.ROWS)
     
     def _isForbidden(self, cell:uint16) -> bool:
-        return bool(self.GRID[cell] & CELL_STATE.FORBIDDEN)
+        return self._isAllowed(cell) != True
 
     def _getNumber(self, cell:uint16) -> np.uint8:
         if (self._isForbidden(cell)):
@@ -380,7 +371,7 @@ class MinesweeperGame:
             num = np.sum(np.isin(neighbors, self.MINE_FIELDS))
             return num
     
-    def revealCell(self, cell: uint16) -> tuple[Res_Code, MinesweeperGame]:
+    def revealCell(self, cell: uint16) -> tuple[Res_Code, MinesweeperLogic]:
         # Check for various conditions that prevent revealing the cell.
         if np.isin(cell, self.MINE_FIELDS):
             return (Res_Code.REVEALED_AND_STEPPED_ON_MINE, self)
@@ -400,7 +391,8 @@ class MinesweeperGame:
     def reaveal_logic(self, init_cells: uint16 | NDArray[uint16]):
         NEW_GRID = self.GRID.copy()
         NEW_GRID.setflags(write=True)
-        cells_to_be_revealed = deque(np.asarray(init_cells, dtype=uint16))
+        tmp_arr = np.atleast_1d(np.asarray(init_cells, dtype=uint16))
+        cells_to_be_revealed = deque(tmp_arr)
         processed_cells = []
 
         # Process cells until there are no more cells to reveal
@@ -486,7 +478,7 @@ class MinesweeperGame:
         NEW_GRID = grid.copy()
         
         # Create new Game, with the updated Grid
-        newGame = MinesweeperGame(
+        newGame = MinesweeperLogic(
             COLS=self.COLS, 
             ROWS=self.ROWS, 
             MINE_FIELDS=self.MINE_FIELDS, 
@@ -503,3 +495,31 @@ class MinesweeperGame:
         newGame.GRID.setflags(write=False)
         
         return newGame
+    
+    def __str__(self):
+        """Returns a string representation of the Minesweeper game board."""
+        if self.GRID is None:
+            return "Minesweeper board not initialized."
+
+        lines = []
+        for r in range(self.ROWS):
+            row_cells = self.GRID[r * self.MAP_BOUNDARIES_COLS: (r + 1) * self.MAP_BOUNDARIES_COLS]
+            row_str = " ".join(self._cell_repr(cell) for cell in row_cells)
+            lines.append(row_str)
+
+        return "\n".join(lines)
+
+    def _cell_repr(self, cell):
+        """Helper function to convert a cell state to a readable character."""
+        if cell == CELL_STATE.FORBIDDEN:
+            return "X"  # Forbidden cells
+        elif cell == CELL_STATE.COVERED:
+            return "#"  # Covered cells
+        elif cell == CELL_STATE.ZERO:
+            return "."  # Uncovered cells
+        elif cell == CELL_STATE.FLAGGED:
+            return "F"  # Flagged cells
+        elif cell == CELL_STATE.MINE:
+            return "*"  # Mines
+        else:
+            return str(cell)  # Default: Use numeric values
