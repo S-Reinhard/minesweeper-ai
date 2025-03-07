@@ -342,14 +342,14 @@ class MinesweeperLogic:
         """
         if(self._isAllowed(cell)):
             return (
-               cell - self.COLS,
-               cell - self.COLS + 1,
+               cell - self.MAP_BOUNDARIES_COLS,
+               cell - self.MAP_BOUNDARIES_COLS + 1,
                cell + 1,
-               cell + self.COLS + 1,
-               cell + self.COLS,
-               cell + self.COLS - 1,
+               cell + self.MAP_BOUNDARIES_COLS + 1,
+               cell + self.MAP_BOUNDARIES_COLS,
+               cell + self.MAP_BOUNDARIES_COLS - 1,
                cell - 1,
-               cell - self.COLS - 1,
+               cell - self.MAP_BOUNDARIES_COLS - 1,
             )
         else:
             return ()
@@ -412,14 +412,13 @@ class MinesweeperLogic:
                     
                 # If no adjacent mines, add neighboring allowed cells to the reveal queue
                 if NUM == 0:
-                    neighbors = np.array(self._getNeighbors(one_cell))
-                    cells_to_be_revealed.extend(self.get_allowed_of(neighbors))
+                    neighbors = np.asarray(self._getNeighbors(one_cell))
+                    neighbors = self.get_allowed_of(neighbors)
+                    cells_to_be_revealed.extend(neighbors)
         return NEW_GRID
 
     def get_allowed_of(self, cells:ndarray):
-        
-        
-        return cells[np.isin(cells, self.ALLOWED_CELLS)]
+        return cells[self._isAllowed(cells)]
     
     def _getFlagNumber(self, cell:uint16, grid = GRID) -> uint8:
         if (self._isForbidden(cell)):
@@ -502,7 +501,7 @@ class MinesweeperLogic:
             return "Minesweeper board not initialized."
 
         lines = []
-        for r in range(self.ROWS):
+        for r in range(self.MAP_BOUNDARIES_ROWS):
             row_cells = self.GRID[r * self.MAP_BOUNDARIES_COLS: (r + 1) * self.MAP_BOUNDARIES_COLS]
             row_str = " ".join(self._cell_repr(cell) for cell in row_cells)
             lines.append(row_str)
@@ -522,4 +521,4 @@ class MinesweeperLogic:
         elif cell == CELL_STATE.MINE:
             return "*"  # Mines
         else:
-            return str(cell)  # Default: Use numeric values
+            return str(int(cell))  # Default: Use numeric values
