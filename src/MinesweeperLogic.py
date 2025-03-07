@@ -1,12 +1,12 @@
 from __future__ import annotations
 import numpy as np
-from numpy import uint8, uint16, int32, ndarray
+from numpy import uint8, uint16, ndarray
 from numpy.random import SeedSequence, BitGenerator, Generator
 from numpy.typing import NDArray
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from collections import deque
-from enum import IntEnum, Enum, auto
+from enum import Enum, auto
 from src.CellStates import CELL_STATE, KNOWN_STATES, NUMBERED_STATES
 from src.GameSettings import Grid_Size, Mine_Density
 import secrets
@@ -26,6 +26,17 @@ class Res_Code(Enum):
     TRIED_TO_CHORD_UNSATURATED_CELL = auto()
     TRIED_TO_CHORD_REVEALED_CELLS = auto()
     CHOR_WAS_SUCCESSFUL = auto()
+    TRIED_TO_FLAG_FORBIDDEN_CELL = auto()
+    TRIED_TO_FLAG_REAVEALED_CELL = auto()
+    TRIED_TO_FLAG_FLAGGED_CELL = auto()
+    TRIED_TO_FLAG_UNCOVERED_CELL = auto()
+    FLAG_SUCESSFULLY_PLACED = auto()
+    TRIED_TO_UNFLAG_FORBIDDEN_CELL = auto()
+    TRIED_TO_UNFLAG_REAVEALED_CELL = auto()
+    TRIED_TO_UNFLAG_COVERED_CELL = auto()
+    TRIED_TO_UNFLAG_UNFLAGGED_CELL = auto()
+    FLAG_SUCESSFULLY_REMOVED = auto()
+    
     
 class AutoRevealedMine(Exception):
     """Exception raised for custom error scenarios.
@@ -337,11 +348,11 @@ class MinesweeperLogic:
             cell (uint16): The index of the cell for which neighboring cells are to be retrieved.
 
         Returns:
-            tuple or None: A tuple of eight neighboring cell indices in the specified order if the cell is allowed;
-                           otherwise, None.
+            ndarray of uint16 containing eight neighboring cell indices in the specified order if the cell is allowed;
+                           otherwise, empty ndarray.
         """
         if(self._isAllowed(cell)):
-            return (
+            return np.array([
                cell - self.MAP_BOUNDARIES_COLS,
                cell - self.MAP_BOUNDARIES_COLS + 1,
                cell + 1,
@@ -350,9 +361,9 @@ class MinesweeperLogic:
                cell + self.MAP_BOUNDARIES_COLS - 1,
                cell - 1,
                cell - self.MAP_BOUNDARIES_COLS - 1,
-            )
+            ], dtype=uint16)
         else:
-            return ()
+            return np.array([], dtype=uint16)
 
     def _isAllowed(self, cell: uint16) -> bool: 
         row_of_cell = cell // self.MAP_BOUNDARIES_COLS  
@@ -364,12 +375,9 @@ class MinesweeperLogic:
         return self._isAllowed(cell) != True
 
     def _getNumber(self, cell:uint16) -> np.uint8:
-        if (self._isForbidden(cell)):
-            return 0
-        else:
-            neighbors = self._getNeighbors(cell)
-            num = np.sum(np.isin(neighbors, self.MINE_FIELDS))
-            return num
+        neighbors = self._getNeighbors(cell)
+        mask = np.isin(neighbors, self.MINE_FIELDS)
+        return np.sum(mask)
     
     def revealCell(self, cell: uint16) -> tuple[Res_Code, MinesweeperLogic]:
         # Check for various conditions that prevent revealing the cell.
@@ -420,47 +428,98 @@ class MinesweeperLogic:
     def get_allowed_of(self, cells:ndarray):
         return cells[self._isAllowed(cells)]
     
-    def _getFlagNumber(self, cell:uint16, grid = GRID) -> uint8:
-        if (self._isForbidden(cell)):
-            return np.array([0])
-        else:
-            arr = grid[self.get_allowed_of(self._getNeighbors(cell))]
+    def _getFlagNumber(self, cell:uint16) -> uint8:
+            neighbors = self._getNeighbors(cell)
+            neighbors = self.get_allowed_of(neighbors)
+            arr = self.GRID[neighbors]
             return np.sum(arr == CELL_STATE.FLAGGED)
             
     
-    def chord(self, cell:uint16):
-        # Create Copy of Grid to perform actions on
-        NEW_GRID = self.GRID.copy()
+    def chord(self, cell:uint16) -> tuple[Res_Code, MinesweeperLogic]:
         
         # ensure that cell is not Forbidden
         if (self._isForbidden(cell)):
             return (Res_Code.TRIED_TO_CHORD_FORBIDDEN_CELL, self)
         
         # ensure that cell is numbered but not empty
-        if (NEW_GRID[cell] in NUMBERED_STATES):
+        if (self.GRID[cell] in NUMBERED_STATES):
             return (Res_Code.TRIED_TO_CHORD_UNNUMBERED_CELL, self)
         
         # ensure that number of flags matches the number on the field
-        if (self.CELL_NUMBERS[cell] != self._getFlagNumber(cell, NEW_GRID)):
+        if (self.CELL_NUMBERS[cell] != self._getFlagNumber(cell)):
             return (Res_Code.TRIED_TO_CHORD_UNSATURATED_CELL, self)
         
-        ## Get covered neighbors
-        # get allowed Neighbors
+        # Get covered neighbors
         neighbors = self._getNeighbors(cell)
-        
-        # filter neighbors to get only allowed neighbors
         neighbors = self.get_allowed_of(neighbors)
-        
         covered_neighbors = self.get_cells_of_state(neighbors, CELL_STATE.COVERED)
         
         if len(covered_neighbors) == 0:
             return (Res_Code.TRIED_TO_CHORD_REVEALED_CELLS, self)
                 
-        # create an updated grid where the cell is revealed
+        # create grid where the cells are revealed
         NEW_GRID = self.reaveal_logic(covered_neighbors)
         
         # return success code and updated game state
         return (Res_Code.CHOR_WAS_SUCCESSFUL, self.update_grid(NEW_GRID))
+    
+    def place_flag(self, cell:uint16) -> tuple[Res_Code, MinesweeperLogic]:
+        # check if field is Forbidden
+        if (self._isForbidden(cell)):
+            return (Res_Code.TRIED_TO_FLAG_FORBIDDEN_CELL, self)
+        
+        # check if field is already reveald
+        if (self.GRID[cell] in KNOWN_STATES):
+            return (Res_Code.TRIED_TO_FLAG_REAVEALED_CELL, self)
+        
+        # check if field is already flagged
+        if (self.GRID[cell] == CELL_STATE.FLAGGED):
+            return (Res_Code.TRIED_TO_FLAG_FLAGGED_CELL, self)
+        
+        # check if field is covered
+        if (self.GRID[cell] != CELL_STATE.COVERED):
+            return (Res_Code.TRIED_TO_FLAG_UNCOVERED_CELL, self)
+        
+        # place flag
+        NEW_GRID = self.GRID.copy()
+        NEW_GRID.setflags(write=True)
+        
+        NEW_GRID[cell] = CELL_STATE.FLAGGED
+        
+        NEW_GRID.setflags(write=False)
+
+        # update
+        return (Res_Code.FLAG_SUCESSFULLY_PLACED, self.update_grid(NEW_GRID))
+    
+    
+    def remove_flag(self, cell:uint16) -> tuple[Res_Code, MinesweeperLogic]:
+        # check if field is Forbidden
+        if (self._isForbidden(cell)):
+            return (Res_Code.TRIED_TO_UNFLAG_FORBIDDEN_CELL, self)
+        
+        # check if field is already reveald
+        if (self.GRID[cell] in KNOWN_STATES):
+            return (Res_Code.TRIED_TO_UNFLAG_REAVEALED_CELL, self)
+        
+        # check if field is already unflagged
+        if (self.GRID[cell] == CELL_STATE.COVERED):
+            return (Res_Code.TRIED_TO_UNFLAG_COVERED_CELL, self)
+        
+        # check if field is covered
+        if (self.GRID[cell] != CELL_STATE.FLAGGED):
+            return (Res_Code.TRIED_TO_UNFLAG_UNFLAGGED_CELL, self)
+        
+        # place flag
+        NEW_GRID = self.GRID.copy()
+        NEW_GRID.setflags(write=True)
+        
+        NEW_GRID[cell] = CELL_STATE.COVERED
+        
+        NEW_GRID.setflags(write=False)
+
+        # update
+        return (Res_Code.FLAG_SUCESSFULLY_REMOVED, self.update_grid(NEW_GRID))
+    
     
     def get_cells_of_state(self, cells: Iterable, state: CELL_STATE):        
         # convert cells to ndarray
@@ -471,6 +530,7 @@ class MinesweeperLogic:
         mask = self.GRID[cell_arr] == state
         
         return cell_arr[mask]
+    
 
     def update_grid(self, grid: np.ndarray[CELL_STATE]):
         # make sure
@@ -495,6 +555,29 @@ class MinesweeperLogic:
         
         return newGame
     
+    
+    def convert_absolute_to_relative_index(self, cell: uint16):
+        width = self.COLS
+        row = (cell // self.MAP_BOUNDARIES_COLS) - 1
+        col = (cell%self.MAP_BOUNDARIES_COLS) -1
+        return col+row*width
+    
+    
+    def convert_relative_coords_to_absolute_index(self, coord):
+        width = self.MAP_BOUNDARIES_COLS
+        row = coord[1]+1
+        col = col[0]+1
+        return col+row*width
+    
+        
+    def convert_relative_to_absolute_index(self, cell: uint16):
+        width = self.MAP_BOUNDARIES_COLS
+        row = (cell // self.MAP_BOUNDARIES_COLS)
+        col = (cell%self.MAP_BOUNDARIES_COLS)
+        
+        return col+row*width
+    
+    
     def __str__(self):
         """Returns a string representation of the Minesweeper game board."""
         if self.GRID is None:
@@ -507,7 +590,8 @@ class MinesweeperLogic:
             lines.append(row_str)
 
         return "\n".join(lines)
-
+    
+    
     def _cell_repr(self, cell):
         """Helper function to convert a cell state to a readable character."""
         if cell == CELL_STATE.FORBIDDEN:
