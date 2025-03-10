@@ -7,10 +7,15 @@ class GridSize(Enum):
     EXPERT = (30, 16)
     CUSTOM_LIMIT = (30, 24)
     RANKED_LIMIT = (50, 50)
-
-
-class MapSize(Enum):
-    BOUNDARIES = (32, 18) # values are Expert+2
+    
+    BOUNDARIES = (30, 16)
+    
+    def TRUE_COLS():
+        return GridSize.BOUNDARIES.value[0]+2
+    
+    def TRUE_ROWS():
+        return GridSize.BOUNDARIES.value[1]+2
+    
         
 class MineDensity:
     BEGINNER = double(0.123)

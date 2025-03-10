@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum, auto
 from src.CellStates import CELL_STATE, KNOWN_STATES, NUMBERED_STATES
-from src.GameSettings import GridSize, MineDensity, GameMap
+from src.GameSettings import GridSize, MineDensity, GridSize
 import secrets
 
 class Res_Code(Enum):
@@ -113,8 +113,8 @@ class MinesweeperLogic:
     UPPER_ROW_RANGE: uint8 = field(default=GridSize.EXPERT.value[1])
     
     # absolute size boundaries for the map.
-    MAP_BOUNDARIES_COLS: uint8 = field(default=GameMap.BOUNDARIES[0])
-    MAP_BOUNDARIES_ROWS: uint8 = field(default=GameMap.BOUNDARIES[0])
+    MAP_BOUNDARIES_COLS: uint8 = field(default=GridSize.TRUE_COLS())
+    MAP_BOUNDARIES_ROWS: uint8 = field(default=GridSize.TRUE_ROWS())
     
     GRID: NDArray[np.int8] = field(default=None) # hack!!! Grid contains Field_State not integers, but Field_States is in IntEnum and theirfor the values behave like integers.  
     
@@ -131,9 +131,11 @@ class MinesweeperLogic:
             
         # init Size if None
         if (self.COLS is None):
-            self.COLS = self.RNG.integers(self.LOWER_COL_RANGE, self.UPPER_COL_RANGE, endpoint=True)
+            random_col_num = self.RNG.integers(self.LOWER_COL_RANGE, self.UPPER_COL_RANGE, endpoint=True)
+            object.__setattr__(self, "COLS", random_col_num) 
         if (self.ROWS is None):
-            self.ROWS = self.RNG.integers(self.LOWER_ROW_RANGE, self.UPPER_ROW_RANGE, endpoint=True)      
+            random_row_num = self.RNG.integers(self.LOWER_ROW_RANGE, self.UPPER_ROW_RANGE, endpoint=True)
+            object.__setattr__(self, "ROWS", random_row_num)
 
         # validate Map Size
         self._check_too_small_map_size()
@@ -259,11 +261,16 @@ class MinesweeperLogic:
             ValueError: If the map boundaries for either columns or rows are less than COLS + 2 or ROWS + 2, respectively.
         """
         # Verify that the map has at least a 1-cell border on each side
-        if (self.MAP_BOUNDARIES_COLS - self.COLS <= 2):
-            raise ValueError("MAP_SIZE_COLS must be at least COLS + 2")
-        if (self.MAP_BOUNDARIES_ROWS - self.ROWS <= 2):
-            raise ValueError("MAP_SIZE_ROWS must be at least ROWS + 2")
-
+        if (self.MAP_BOUNDARIES_COLS - self.COLS < 2):
+            raise ValueError(f"The number of columns (COLS) must be <= {self.MAP_BOUNDARIES_COLS-2} to ensure that there is at least one column of forbidden cells to the left and right of the playable area")
+        if (self.MAP_BOUNDARIES_ROWS - self.ROWS < 2):
+            raise ValueError(f"The number of rows (ROWS) must be <= {self.MAP_BOUNDARIES_ROWS-2} to ensure that there is at least one row of forbidden cells to the top and bottom of the playable area")
+        
+        if (self.ROWS <= 0):
+            raise ValueError("ROWS must be > 0")             
+        if (self.COLS <= 0):
+            raise ValueError("COLS must be > 0")             
+    
     def _check_too_early_mine_definition(self):
         """
         Validates that MINE_FIELDS is not defined before the essential board dimensions are set.
