@@ -9,7 +9,7 @@ class GridSize(Enum):
     RANKED_LIMIT = (50, 50)
 
 
-class GameMap(Enum):
+class MapSize(Enum):
     BOUNDARIES = (32, 18) # values are Expert+2
         
 class MineDensity:
