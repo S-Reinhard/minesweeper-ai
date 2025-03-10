@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from src.MinesweeperLogic import MinesweeperLogic, Res_Code
-from src.GameSettings import Grid_Size
+from src.GameSettings import GridSize
 from collections import deque
 from typing import Deque, Dict, Callable
 from numpy import uint16
@@ -68,7 +68,7 @@ class MinesweeperGame():
         jump(hist_index: int) -> None:
             Moves the history pointer to an absolute history index.
     """
-    def __init__(self, cols=Grid_Size.BEGINNER[0], rows=Grid_Size.BEGINNER[1], seed=None):
+    def __init__(self, cols=GridSize.BEGINNER[0], rows=GridSize.BEGINNER[1], seed=None):
         """Initialize a new Minesweeper game with a given grid size and optional seed."""
         init_state = MinesweeperLogic(COLS=cols, ROWS=rows, SEED=seed)
         

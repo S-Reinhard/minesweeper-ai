@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum, auto
 from src.CellStates import CELL_STATE, KNOWN_STATES, NUMBERED_STATES
-from src.GameSettings import Grid_Size, Mine_Density
+from src.GameSettings import GridSize, MineDensity, GameMap
 import secrets
 
 class Res_Code(Enum):
@@ -107,14 +107,14 @@ class MinesweeperLogic:
     SEED: None | int | list[int] | SeedSequence | BitGenerator | Generator = field(default=None)
     
     # size boudaries for the generated levels. 
-    LOWER_COL_RANGE: uint8 = field(default=Grid_Size.BEGINNER.value[0])
-    UPPER_COL_RANGE: uint8 = field(default=Grid_Size.EXPERT.value[0])
-    LOWER_ROW_RANGE: uint8 = field(default=Grid_Size.BEGINNER.value[1])
-    UPPER_ROW_RANGE: uint8 = field(default=Grid_Size.EXPERT.value[1])
+    LOWER_COL_RANGE: uint8 = field(default=GridSize.BEGINNER.value[0])
+    UPPER_COL_RANGE: uint8 = field(default=GridSize.EXPERT.value[0])
+    LOWER_ROW_RANGE: uint8 = field(default=GridSize.BEGINNER.value[1])
+    UPPER_ROW_RANGE: uint8 = field(default=GridSize.EXPERT.value[1])
     
     # absolute size boundaries for the map.
-    MAP_BOUNDARIES_COLS: uint8 = field(default=Grid_Size.EXPERT.value[0] + 2)
-    MAP_BOUNDARIES_ROWS: uint8 = field(default=Grid_Size.EXPERT.value[1] + 2)
+    MAP_BOUNDARIES_COLS: uint8 = field(default=GameMap.BOUNDARIES[0])
+    MAP_BOUNDARIES_ROWS: uint8 = field(default=GameMap.BOUNDARIES[0])
     
     GRID: NDArray[np.int8] = field(default=None) # hack!!! Grid contains Field_State not integers, but Field_States is in IntEnum and theirfor the values behave like integers.  
     
@@ -141,7 +141,7 @@ class MinesweeperLogic:
         # if no mine fields are given place mines randomly
         if (self.MINE_FIELDS is None):
             # select random mine ration
-            mine_ratio = self.RNG.uniform(Mine_Density.BEGINNER, Mine_Density.EXPERT)
+            mine_ratio = self.RNG.uniform(MineDensity.BEGINNER, MineDensity.EXPERT)
             mine_num = uint16(self.SIZE * mine_ratio)
             mine_fields = self.RNG.choice(self.ALLOWED_CELLS, mine_num, replace=False)
             object.__setattr__(self, 'MINE_FIELDS', mine_fields)
